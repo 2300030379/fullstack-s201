@@ -16,7 +16,7 @@ function App() {
   const handleChange = (e) => {
     setProduct({ ...product, [e.target.name]: e.target.value });
   };
-const BASE_URL = 'http://100.29.48.69:9090';
+const BASE_URL = 'http://100.29.48.69:9090/frontapp1';
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
