@@ -7,12 +7,11 @@ pipeline {
     }
 
     environment {
-        TOMCAT_URL = 'http://localhost:8080/manager/text'
+        TOMCAT_URL = 'http://100.29.48.69:9090/manager/text'
         TOMCAT_USER = 'admin'
         TOMCAT_PASS = 'admin'
 
-        BACKEND_REPO = 'https://github.com/imasheshk/crud-be.git'
-        FRONTEND_REPO = 'https://github.com/imasheshk/crud-fe.git'
+        REPO_URL = 'https://github.com/2300030379/fullstack-s201.git'
 
         BACKEND_DIR = 'backend'
         FRONTEND_DIR = 'frontend'
@@ -24,11 +23,18 @@ pipeline {
     stages {
         stage('Clone Repositories') {
             steps {
-                dir("${env.BACKEND_DIR}") {
-                    git branch: 'main', url: "${env.BACKEND_REPO}"
-                }
-                dir("${env.FRONTEND_DIR}") {
-                    git branch: 'main', url: "${env.FRONTEND_REPO}"
+                // Clean workspace first (important to avoid .git corruption)
+                deleteDir()
+
+                // Clone once
+                git branch: 'main', url: "${env.REPO_URL}"
+
+                // Move subfolders into expected dirs
+                script {
+                    bat "if not exist ${env.BACKEND_DIR} mkdir ${env.BACKEND_DIR}"
+                    bat "if not exist ${env.FRONTEND_DIR} mkdir ${env.FRONTEND_DIR}"
+                    bat "xcopy /E /I /Y crud_back ${env.BACKEND_DIR}"
+                    bat "xcopy /E /I /Y crud_front ${env.FRONTEND_DIR}"
                 }
             }
         }
