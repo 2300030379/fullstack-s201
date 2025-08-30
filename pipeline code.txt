@@ -2,28 +2,42 @@ pipeline {
     agent any
 
     tools {
-        jdk 'JDK_HOME'       // Define in Jenkins → Manage Jenkins → Tools
-        maven 'MAVEN_HOME'   // Define in Tools
-        nodejs 'NODE_HOME'   // Define in Tools
+        jdk 'JDK_HOME'       // JDK 17
+        maven 'MAVEN_HOME'   // Maven
     }
 
     environment {
-        EC2_HOST = '2300030379@100.29.48.69'
-        BACKEND_PATH = '/home/2300030379/backend'
-        FRONTEND_PATH = '/home/2300030379/frontend'
+        // Tomcat Manager details (your EC2 public IP)
+        TOMCAT_URL  = 'http://100.29.48.69:9090/manager/text'
+        TOMCAT_USER = 'admin'
+        TOMCAT_PASS = 'admin'
+
+        // GitHub repo
+        MAIN_REPO   = 'https://github.com/2300030379/fullstack-s201.git'
+
+        // Project directories
+        BACKEND_DIR = 'crud_back'
+        FRONTEND_DIR = 'crud_front'
+
+        // Artifact names
+        BACKEND_WAR = 'crud_back/target/springapp1.war'
+        FRONTEND_WAR = 'crud_front/target/frontapp1.war'
     }
 
     stages {
         stage('Clone Repository') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/2300030379/fullstack-s201.git'
+                git branch: 'main', url: "${env.MAIN_REPO}"
             }
         }
 
         stage('Build React Frontend') {
             steps {
-                dir('crud_front') {
+                script {
+                    def nodeHome = tool name: 'NODE_HOME', type: 'jenkins.plugins.nodejs.tools.NodeJSInstallation'
+                    env.PATH = "${nodeHome}/bin:${env.PATH}"
+                }
+                dir("${env.FRONTEND_DIR}") {
                     sh 'npm install'
                     sh 'npm run build'
                 }
@@ -32,38 +46,43 @@ pipeline {
 
         stage('Package React as WAR') {
             steps {
-                sh '''
-                    rm -rf crud_front/war_content
-                    mkdir -p crud_front/war_content/META-INF crud_front/war_content/WEB-INF
-                    cp -r crud_front/dist/* crud_front/war_content/
-                    jar -cvf crud_front/frontapp1.war -C crud_front/war_content .
-                '''
-            }
-        }
-
-        stage('Build Spring Boot Backend') {
-            steps {
-                dir('crud_back') {
-                    sh 'mvn clean package -DskipTests'
+                script {
+                    def warDir = "${env.FRONTEND_DIR}/war_content"
+                    sh """
+                        rm -rf ${warDir}
+                        mkdir -p ${warDir}/META-INF ${warDir}/WEB-INF
+                        cp -r ${env.FRONTEND_DIR}/dist/* ${warDir}/
+                        jar -cvf ${env.FRONTEND_WAR} -C ${warDir} .
+                    """
                 }
             }
         }
 
-        stage('Deploy to EC2') {
+        stage('Build Spring Boot App') {
+            steps {
+                dir("${env.BACKEND_DIR}") {
+                    sh 'mvn clean package -DskipTests'
+                    sh 'mv target/*.war target/springapp1.war'
+                }
+            }
+        }
+
+        stage('Deploy Backend WAR') {
             steps {
                 sh """
-                    echo "Creating directories on EC2..."
-                    ssh -o StrictHostKeyChecking=no ${EC2_HOST} "mkdir -p ${BACKEND_PATH} ${FRONTEND_PATH}"
+                    curl -u ${env.TOMCAT_USER}:${env.TOMCAT_PASS} \\
+                    --upload-file "${env.BACKEND_WAR}" \\
+                    "${env.TOMCAT_URL}/deploy?path=/springapp1&update=true"
+                """
+            }
+        }
 
-                    echo "Deploying backend..."
-                    scp -o StrictHostKeyChecking=no crud_back/target/cruddemo.war ${EC2_HOST}:${BACKEND_PATH}/
-
-                    echo "Deploying frontend..."
-                    scp -o StrictHostKeyChecking=no crud_front/frontapp1.war ${EC2_HOST}:${FRONTEND_PATH}/
-
-                    echo "Restarting backend process..."
-                    ssh -o StrictHostKeyChecking=no ${EC2_HOST} \
-                      "pkill -f cruddemo.war || true && nohup java -jar ${BACKEND_PATH}/cruddemo.war > ${BACKEND_PATH}/backend.log 2>&1 &"
+        stage('Deploy Frontend WAR') {
+            steps {
+                sh """
+                    curl -u ${env.TOMCAT_USER}:${env.TOMCAT_PASS} \\
+                    --upload-file "${env.FRONTEND_WAR}" \\
+                    "${env.TOMCAT_URL}/deploy?path=/frontapp1&update=true"
                 """
             }
         }
@@ -71,10 +90,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Build and deployment completed successfully!"
+            echo "✅ Deployment successful!"
         }
         failure {
-            echo "❌ Build or deployment failed — check the logs for details."
+            echo "❌ Build or deployment failed — check logs."
         }
     }
 }
